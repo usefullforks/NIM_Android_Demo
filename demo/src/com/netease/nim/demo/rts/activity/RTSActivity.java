@@ -9,25 +9,28 @@ import android.os.Handler;
 import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import com.netease.nim.demo.R;
+import com.netease.nim.demo.main.activity.MainActivity;
 import com.netease.nim.demo.rts.ActionTypeEnum;
 import com.netease.nim.demo.rts.doodle.DoodleView;
 import com.netease.nim.demo.rts.doodle.SupportActionType;
 import com.netease.nim.demo.rts.doodle.TransactionCenter;
 import com.netease.nim.demo.rts.doodle.action.MyPath;
 import com.netease.nim.demo.session.extension.RTSAttachment;
-import com.netease.nim.uikit.cache.NimUserInfoCache;
+import com.netease.nim.uikit.api.wrapper.NimToolBarOptions;
+import com.netease.nim.uikit.business.session.helper.MessageListPanelHelper;
+import com.netease.nim.uikit.business.uinfo.UserInfoHelper;
+import com.netease.nim.uikit.common.activity.ToolBarOptions;
 import com.netease.nim.uikit.common.activity.UI;
 import com.netease.nim.uikit.common.ui.dialog.EasyAlertDialog;
 import com.netease.nim.uikit.common.ui.dialog.EasyAlertDialogHelper;
 import com.netease.nim.uikit.common.ui.imageview.HeadImageView;
 import com.netease.nim.uikit.common.util.sys.ScreenUtil;
-import com.netease.nim.uikit.model.ToolBarOptions;
-import com.netease.nim.uikit.session.helper.MessageListPanelHelper;
 import com.netease.nimlib.sdk.NIMClient;
 import com.netease.nimlib.sdk.Observer;
 import com.netease.nimlib.sdk.StatusCode;
@@ -137,10 +140,10 @@ public class RTSActivity extends UI implements View.OnClickListener {
         }
 
         isBusy = true;
-
+        dismissKeyguard();
         setContentView(R.layout.rts_activity);
 
-        ToolBarOptions options = new ToolBarOptions();
+        ToolBarOptions options = new NimToolBarOptions();
         options.isNeedNavigate = false;
         setToolBar(R.id.toolbar, options);
 
@@ -214,6 +217,11 @@ public class RTSActivity extends UI implements View.OnClickListener {
         }
 
         super.onDestroy();
+
+        if (needFinish) {
+            return;
+        }
+
         NIMClient.getService(AuthServiceObserver.class).observeOnlineStatus(userStatusObserver, false);
         registerInComingObserver(false);
         registerOutgoingObserver(false);
@@ -229,10 +237,21 @@ public class RTSActivity extends UI implements View.OnClickListener {
         @Override
         public void onEvent(StatusCode code) {
             if (code.wontAutoLogin()) {
+                MainActivity.logout(RTSActivity.this, true);
                 finish();
             }
         }
     };
+
+    // 设置窗口flag，亮屏并且解锁/覆盖在锁屏界面上
+    private void dismissKeyguard() {
+        getWindow().addFlags(
+                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED |
+                        WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD |
+                        WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON |
+                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+        );
+    }
 
     private void findViews() {
         startSessionLayout = findViewById(R.id.start_session_layout);
@@ -299,7 +318,7 @@ public class RTSActivity extends UI implements View.OnClickListener {
     }
 
     private void initAccountInfoView() {
-        nameText.setText(NimUserInfoCache.getInstance().getUserDisplayName(account));
+        nameText.setText(UserInfoHelper.getUserDisplayName(account));
         headImage.loadBuddyAvatar(account);
     }
 
@@ -382,6 +401,9 @@ public class RTSActivity extends UI implements View.OnClickListener {
                     case ClientType.Windows:
                         client = "Windows";
                         break;
+                    case ClientType.MAC:
+                        client = "Mac";
+                        break;
                     default:
                         break;
                 }
@@ -414,16 +436,23 @@ public class RTSActivity extends UI implements View.OnClickListener {
 
         @Override
         public void onConnectResult(String sessionId, RTSTunnelType tunType, long channelId, int code, String file) {
-            Toast.makeText(RTSActivity.this, "onConnectResult, tunType=" + tunType.toString() +
-                    ", channelId=" + channelId +
-                    ", code=" + code + ", file=" + file, Toast.LENGTH_SHORT).show();
+            try {
+                Toast.makeText(RTSActivity.this, "onConnectResult, tunType=" + tunType.toString() +
+                        ", channelId=" + channelId +
+                        ", code=" + code + ", file=" + file, Toast.LENGTH_SHORT).show();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
 
 
         @Override
         public void onChannelEstablished(String sessionId, RTSTunnelType tunType) {
-            Toast.makeText(RTSActivity.this, "onCallEstablished,tunType=" + tunType.toString(), Toast
-                    .LENGTH_SHORT).show();
+            try {
+                Toast.makeText(RTSActivity.this, "onCallEstablished,tunType=" + tunType.toString(), Toast.LENGTH_SHORT).show();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
 
             if (tunType == RTSTunnelType.AUDIO) {
                 RTSManager.getInstance().setSpeaker(sessionId, true); // 默认开启扬声器
@@ -437,7 +466,8 @@ public class RTSActivity extends UI implements View.OnClickListener {
 
         @Override
         public void onUserLeave(String sessionId, RTSTunnelType tunType, String account, int event) {
-
+            //双人直接关闭会话
+            endSession();
         }
 
         @Override

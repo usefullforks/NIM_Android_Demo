@@ -58,11 +58,11 @@ public class DropManager {
 
     private boolean enable;
     private int[] explosionResIds = new int[]{
-            R.drawable.explosion_one,
-            R.drawable.explosion_two,
-            R.drawable.explosion_three,
-            R.drawable.explosion_four,
-            R.drawable.explosion_five
+            R.drawable.nim_explosion_one,
+            R.drawable.nim_explosion_two,
+            R.drawable.nim_explosion_three,
+            R.drawable.nim_explosion_four,
+            R.drawable.nim_explosion_five
     };
 
     // interface
@@ -85,8 +85,10 @@ public class DropManager {
     public void destroy() {
         this.isTouchable = false;
         this.statusBarHeight = 0;
-        this.dropCover.removeAllDropCompletedListeners();
-        this.dropCover = null;
+        if (this.dropCover != null) {
+            this.dropCover.removeAllDropCompletedListeners();
+            this.dropCover = null;
+        }
         this.currentId = null;
         this.textPaint = null;
         this.textYOffset = 0;

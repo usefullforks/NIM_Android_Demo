@@ -10,19 +10,20 @@ import android.widget.AdapterView;
 import android.widget.ListView;
 import android.widget.Toast;
 
+import com.netease.nim.avchatkit.AVChatKit;
 import com.netease.nim.demo.DemoCache;
 import com.netease.nim.demo.R;
-import com.netease.nim.demo.avchat.activity.AVChatSettingsActivity;
-import com.netease.nim.demo.config.preference.Preferences;
 import com.netease.nim.demo.config.preference.UserPreferences;
 import com.netease.nim.demo.contact.activity.UserProfileSettingActivity;
 import com.netease.nim.demo.jsbridge.JsBridgeActivity;
 import com.netease.nim.demo.main.adapter.SettingsAdapter;
 import com.netease.nim.demo.main.model.SettingTemplate;
 import com.netease.nim.demo.main.model.SettingType;
+import com.netease.nim.demo.redpacket.NIMRedPacketClient;
+import com.netease.nim.uikit.api.NimUIKit;
+import com.netease.nim.uikit.api.wrapper.NimToolBarOptions;
+import com.netease.nim.uikit.common.activity.ToolBarOptions;
 import com.netease.nim.uikit.common.activity.UI;
-import com.netease.nim.uikit.model.ToolBarOptions;
-import com.netease.nim.uikit.session.audio.MessageAudioControl;
 import com.netease.nimlib.sdk.NIMClient;
 import com.netease.nimlib.sdk.Observer;
 import com.netease.nimlib.sdk.RequestCallback;
@@ -64,6 +65,8 @@ public class SettingsActivity extends UI implements SettingsAdapter.SwitchChange
     private static final int TAG_JS_BRIDGE = 20; // js bridge
 
     private static final int TAG_NOTIFICATION_STYLE = 21; // 通知栏展开、折叠
+
+    private static final int TAG_JRMFWAllET = 22; // 我的钱包
     ListView listView;
     SettingsAdapter adapter;
     private List<SettingTemplate> items = new ArrayList<SettingTemplate>();
@@ -71,12 +74,13 @@ public class SettingsActivity extends UI implements SettingsAdapter.SwitchChange
     private SettingTemplate disturbItem;
     private SettingTemplate clearIndexItem;
     private SettingTemplate notificationItem;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.settings_activity);
 
-        ToolBarOptions options = new ToolBarOptions();
+        ToolBarOptions options = new NimToolBarOptions();
         options.titleId = R.string.settings;
         setToolBar(R.id.toolbar, options);
 
@@ -89,14 +93,7 @@ public class SettingsActivity extends UI implements SettingsAdapter.SwitchChange
     @Override
     protected void onResume() {
         super.onResume();
-        // android2.3以下版本 布局混乱的问题
-        if (Build.VERSION.SDK_INT <= 10) {
-            adapter = null;
-            initAdapter();
-            adapter.notifyDataSetChanged();
-        } else {
-            adapter.notifyDataSetChanged();
-        }
+        adapter.notifyDataSetChanged();
     }
 
     @Override
@@ -180,7 +177,7 @@ public class SettingsActivity extends UI implements SettingsAdapter.SwitchChange
         items.add(SettingTemplate.makeSeperator());
 
         items.add(new SettingTemplate(TAG_SPEAKER, getString(R.string.msg_speaker), SettingType.TYPE_TOGGLE,
-                com.netease.nim.uikit.UserPreferences.isEarPhoneModeEnable()));
+                NimUIKit.isEarPhoneModeEnable()));
 
         items.add(SettingTemplate.makeSeperator());
 
@@ -207,6 +204,11 @@ public class SettingsActivity extends UI implements SettingsAdapter.SwitchChange
         items.add(SettingTemplate.addLine());
         items.add(new SettingTemplate(TAG_JS_BRIDGE, getString(R.string.js_bridge_demonstration)));
         items.add(SettingTemplate.makeSeperator());
+
+        if (NIMRedPacketClient.isEnable()) {
+            items.add(new SettingTemplate(TAG_JRMFWAllET, "我的钱包"));
+            items.add(SettingTemplate.makeSeperator());
+        }
 
         items.add(new SettingTemplate(TAG_ABOUT, getString(R.string.setting_about)));
 
@@ -236,13 +238,16 @@ public class SettingsActivity extends UI implements SettingsAdapter.SwitchChange
                 clearIndex();
                 break;
             case TAG_NRTC_SETTINGS:
-                startActivity(new Intent(SettingsActivity.this, AVChatSettingsActivity.class));
+                AVChatKit.startAVChatSettings(SettingsActivity.this);
                 break;
             case TAG_NRTC_NET_DETECT:
                 netDetectForNrtc();
                 break;
             case TAG_JS_BRIDGE:
                 startActivity(new Intent(SettingsActivity.this, JsBridgeActivity.class));
+                break;
+            case TAG_JRMFWAllET:
+                NIMRedPacketClient.startWalletActivity(this);
                 break;
             default:
                 break;
@@ -272,18 +277,10 @@ public class SettingsActivity extends UI implements SettingsAdapter.SwitchChange
      * 注销
      */
     private void logout() {
-        removeLoginState();
         MainActivity.logout(SettingsActivity.this, false);
 
         finish();
         NIMClient.getService(AuthService.class).logout();
-    }
-
-    /**
-     * 清除登陆状态
-     */
-    private void removeLoginState() {
-        Preferences.saveUserToken("");
     }
 
     @Override
@@ -293,8 +290,7 @@ public class SettingsActivity extends UI implements SettingsAdapter.SwitchChange
                 setMessageNotify(checkState);
                 break;
             case TAG_SPEAKER:
-                com.netease.nim.uikit.UserPreferences.setEarPhoneModeEnable(checkState);
-                MessageAudioControl.getInstance(SettingsActivity.this).setEarPhoneModeEnable(checkState);
+                NimUIKit.setEarPhoneModeEnable(checkState);
                 break;
             case TAG_MSG_IGNORE:
                 UserPreferences.setMsgIgnore(checkState);
@@ -355,6 +351,7 @@ public class SettingsActivity extends UI implements SettingsAdapter.SwitchChange
                 notificationItem.setChecked(checkState);
                 setToggleNotification(checkState);
             }
+
             @Override
             public void onFailed(int code) {
                 notificationItem.setChecked(!checkState);
@@ -362,7 +359,7 @@ public class SettingsActivity extends UI implements SettingsAdapter.SwitchChange
                 if (code == ResponseCode.RES_UNSUPPORT) {
                     notificationItem.setChecked(checkState);
                     setToggleNotification(checkState);
-                } else if (code == ResponseCode.RES_EFREQUENTLY){
+                } else if (code == ResponseCode.RES_EFREQUENTLY) {
                     Toast.makeText(SettingsActivity.this, R.string.operation_too_frequent, Toast.LENGTH_SHORT).show();
                 } else {
                     Toast.makeText(SettingsActivity.this, R.string.user_info_update_failed, Toast.LENGTH_SHORT).show();

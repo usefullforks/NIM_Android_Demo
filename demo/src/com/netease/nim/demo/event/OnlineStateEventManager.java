@@ -9,10 +9,10 @@ import android.net.NetworkInfo;
 
 import com.netease.nim.demo.DemoCache;
 import com.netease.nim.demo.R;
-import com.netease.nim.uikit.NimUIKit;
-import com.netease.nim.uikit.cache.FriendDataCache;
 import com.netease.nim.uikit.common.util.log.LogUtil;
 import com.netease.nim.uikit.common.util.sys.NetworkUtil;
+import com.netease.nim.uikit.api.NimUIKit;
+import com.netease.nim.uikit.api.model.contact.ContactChangedObserver;
 import com.netease.nimlib.sdk.NIMClient;
 import com.netease.nimlib.sdk.Observer;
 import com.netease.nimlib.sdk.RequestCallbackWrapper;
@@ -55,14 +55,21 @@ public class OnlineStateEventManager {
     // 已发布的网络状态
     private static int pubNetState = -1;
 
+    private static boolean enable = false;
+
+
     public static void init() {
+        if (!enableOnlineStateEvent()) {
+            return;
+        }
         registerEventObserver(true);
         registerOnlineStatusObserver();
-        FriendDataCache.getInstance().registerFriendDataChangedObserver(observer, true);
+
+        NimUIKit.getContactChangedObservable().registerObserver(observer, true);
         registerNetTypeChangeObserver();
     }
 
-    private static FriendDataCache.FriendDataChangedObserver observer = new FriendDataCache.FriendDataChangedObserver() {
+    private static ContactChangedObserver observer = new ContactChangedObserver() {
         @Override
         public void onAddedOrUpdatedFriends(List<String> accounts) {
             if (accounts == null || accounts.isEmpty()) {
@@ -138,7 +145,7 @@ public class OnlineStateEventManager {
 
                 // 发布自己的在线状态
                 pubNetState = -1;
-                publishOnlineStateEvent();
+                publishOnlineStateEvent(false);
 
                 // 订阅在线状态，包括好友以及最近联系人
                 OnlineStateEventSubscribe.initSubscribes();
@@ -159,7 +166,7 @@ public class OnlineStateEventManager {
                 }
                 LogUtil.ui("BroadcastReceiver CONNECTIVITY_ACTION " + info.getType() + info.getTypeName() + info.getExtraInfo());
                 if (NIMClient.getStatus() == StatusCode.LOGINED) {
-                    publishOnlineStateEvent();
+                    publishOnlineStateEvent(false);
                 }
             }
         }
@@ -264,16 +271,19 @@ public class OnlineStateEventManager {
         }
         // 如果 UIKit 使用在线状态功能，则通知在线状态变化
         if (NimUIKit.enableOnlineState()) {
-            NimUIKit.notifyOnlineStateChange(changed);
+            NimUIKit.getOnlineStateChangeObservable().notifyOnlineStateChange(changed);
         }
     }
 
     /**
      * 发布自己在线状态
      */
-    public static void publishOnlineStateEvent() {
+    public static void publishOnlineStateEvent(boolean force) {
+        if (!enable) {
+            return;
+        }
         int netState = getNetWorkTypeName(DemoCache.getContext());
-        if (netState == pubNetState) {
+        if (!force && netState == pubNetState) {
             return;
         }
         pubNetState = netState;
@@ -288,7 +298,7 @@ public class OnlineStateEventManager {
     }
 
     /**
-     * 多端在线时展示规则 PC > IOS/Android > Web
+     * 多端在线时展示规则 PC > Mac > IOS/Android > Web
      */
     public static OnlineState getDisplayOnlineState(Event event) {
 
@@ -303,6 +313,8 @@ public class OnlineStateEventManager {
         OnlineState result;
 
         if (isOnline(result = multiClientStates.get(ClientType.Windows))) {
+            return result;
+        } else if (isOnline(result = multiClientStates.get(ClientType.MAC))) {
             return result;
         } else if (isOnline(result = multiClientStates.get(ClientType.iOS))) {
             return result;
@@ -335,6 +347,9 @@ public class OnlineStateEventManager {
      * @return
      */
     public static String getOnlineClientContent(Context context, OnlineState state, boolean simple) {
+        if (!enable) {
+            return null;
+        }
         // 离线
         if (!isOnline(state)) {
             return context.getString(R.string.off_line);
@@ -348,6 +363,9 @@ public class OnlineStateEventManager {
         switch (type) {
             case ClientType.Windows:
                 result = context.getString(R.string.on_line_pc);
+                break;
+            case ClientType.MAC:
+                result = context.getString(R.string.on_line_mac);
                 break;
             case ClientType.Web:
                 result = context.getString(R.string.on_line_web);
@@ -402,6 +420,12 @@ public class OnlineStateEventManager {
      * @param account
      */
     public static void checkSubscribe(String account) {
+        if (!enable) {
+            return;
+        }
+        if (OnlineStateEventSubscribe.subscribeFilter(account)) {
+            return;
+        }
         // 未曾订阅过
         if (!OnlineStateEventCache.hasSubscribed(account)) {
             List<String> accounts = new ArrayList<>(1);
@@ -409,5 +433,17 @@ public class OnlineStateEventManager {
             LogUtil.ui("display online state but not subscribe " + account);
             OnlineStateEventSubscribe.subscribeOnlineStateEvent(accounts, OnlineStateEventSubscribe.SUBSCRIBE_EXPIRY);
         }
+    }
+
+    public static boolean isEnable() {
+        return enable;
+    }
+
+    /**
+     * 允许在线状态事件,开发者开通在线状态后修改此处直接返回true
+     */
+    private static boolean enableOnlineStateEvent() {
+        String packageName = DemoCache.getContext().getPackageName();
+        return enable = (packageName != null && packageName.equals("com.netease.nim.demo"));
     }
 }

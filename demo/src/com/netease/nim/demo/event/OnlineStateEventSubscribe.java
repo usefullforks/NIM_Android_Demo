@@ -3,10 +3,10 @@ package com.netease.nim.demo.event;
 import android.os.Handler;
 
 import com.netease.nim.demo.DemoCache;
-import com.netease.nim.demo.common.infra.Handlers;
 import com.netease.nim.demo.config.preference.UserPreferences;
-import com.netease.nim.uikit.cache.FriendDataCache;
+import com.netease.nim.uikit.common.framework.infra.Handlers;
 import com.netease.nim.uikit.common.util.log.LogUtil;
+import com.netease.nim.uikit.api.NimUIKit;
 import com.netease.nimlib.sdk.NIMClient;
 import com.netease.nimlib.sdk.RequestCallbackWrapper;
 import com.netease.nimlib.sdk.ResponseCode;
@@ -17,6 +17,7 @@ import com.netease.nimlib.sdk.msg.MsgService;
 import com.netease.nimlib.sdk.msg.constant.SessionTypeEnum;
 import com.netease.nimlib.sdk.msg.model.RecentContact;
 
+import java.util.Iterator;
 import java.util.List;
 
 /**
@@ -90,7 +91,8 @@ public class OnlineStateEventSubscribe {
      * 订阅好友、最近联系人的在线状态事件
      */
     public static void subscribeAllOnlineStateEvent() {
-        final List<String> accounts = FriendDataCache.getInstance().getMyFriendAccounts();
+        final List<String> accounts = NimUIKit.getContactProvider().getUserInfoOfMyFriends();
+        filter(accounts);
         NIMClient.getService(MsgService.class).queryRecentContacts().setCallback(new RequestCallbackWrapper<List<RecentContact>>() {
             @Override
             public void onResult(int code, List<RecentContact> result, Throwable exception) {
@@ -100,7 +102,7 @@ public class OnlineStateEventSubscribe {
                             continue;
                         }
                         String id = recentContact.getContactId();
-                        if (!FriendDataCache.getInstance().isMyFriend(id)) {
+                        if (!NimUIKit.getContactProvider().isMyFriend(id)) {
                             accounts.add(id);
                         }
                     }
@@ -126,6 +128,7 @@ public class OnlineStateEventSubscribe {
         if (waitInitSubs || !initSubsFinished || accounts == null || accounts.isEmpty()) {
             return;
         }
+        filter(accounts);
         LogUtil.ui("do subscribe onlineStateEvent accounts = " + accounts);
         EventSubscribeRequest eventSubscribeRequest = new EventSubscribeRequest();
         eventSubscribeRequest.setEventType(NimOnlineStateEvent.EVENT_TYPE);
@@ -152,6 +155,21 @@ public class OnlineStateEventSubscribe {
                 }
             }
         });
+    }
+
+    private static void filter(final List<String> accounts) {
+        Iterator<String> iterator = accounts.iterator();
+        while (iterator.hasNext()) {
+            String s = iterator.next();
+            if (subscribeFilter(s)) {
+                iterator.remove();
+            }
+        }
+    }
+
+    // 机器人账号不订阅
+    public static boolean subscribeFilter(String account) {
+        return NimUIKit.getRobotInfoProvider().getRobotByAccount(account) != null;
     }
 
     /**
